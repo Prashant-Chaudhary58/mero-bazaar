@@ -80,7 +80,7 @@ export default function DashboardPage() {
     };
     fetchUser();
 
-    // 3. Load persisted location
+    // 3. Load persisted location as an initial fallback
     const storedLocation = localStorage.getItem('currentLocation');
     if (storedLocation) {
       try {
@@ -88,6 +88,27 @@ export default function DashboardPage() {
       } catch (e) {
         console.error("Failed to parse stored location", e);
       }
+    }
+
+    // Always attempt to get fresh geolocation automatically to match Product Details accurately
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const loc = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+          // Only update state if coordinates have meaningfully changed to prevent infinite re-renders
+          const prev = storedLocation ? JSON.parse(storedLocation) : null;
+          if (!prev || prev.lat !== loc.lat || prev.lng !== loc.lng) {
+            setCurrentLocation(loc);
+            localStorage.setItem('currentLocation', JSON.stringify(loc));
+          }
+        },
+        (error) => {
+          console.error("Silent location fetch failed or denied.", error);
+        }
+      );
     }
   }, []);
 
@@ -142,6 +163,7 @@ export default function DashboardPage() {
   const profileImage = getProfileImage();
 
   useEffect(() => {
+    // Re-run filter and distance calculation anytime products, category, search, user, or location changes
     filterProducts();
   }, [products, selectedCategory, searchQuery, user, currentLocation]);
 
@@ -189,11 +211,11 @@ export default function DashboardPage() {
     }
 
     // Distance Calculation & Sorting
-    // Use user profile location OR temporary current location
-    const userLat = user?.lat ? parseFloat(user.lat) : currentLocation?.lat;
-    const userLng = user?.lng ? parseFloat(user.lng) : currentLocation?.lng;
+    // Prioritize actual physical location over static profile location
+    const userLat = currentLocation?.lat ?? (user?.lat ? parseFloat(user.lat) : undefined);
+    const userLng = currentLocation?.lng ?? (user?.lng ? parseFloat(user.lng) : undefined);
 
-    if (userLat && userLng) {
+    if (userLat !== undefined && userLng !== undefined) {
       temp = temp.map(p => {
         if (p.seller?.lat && p.seller?.lng) {
           const dist = calculateDistance(
@@ -335,7 +357,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Geolocation Prompt for Buyers */}
-          {user && !user.lat && !currentLocation && (
+          {user && !currentLocation && (
             <div className="max-w-md mx-auto bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4">
               <div className="flex items-center gap-2 text-blue-800">
                 <span>📍</span>
